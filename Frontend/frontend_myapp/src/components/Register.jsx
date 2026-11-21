@@ -1,6 +1,5 @@
-
 import { useState } from 'react';
-import axios from 'axios';
+import { registerUser } from '../Api';
 
 function Register() {
 
@@ -47,15 +46,12 @@ function Register() {
 
         try {
 
-            const response = await axios.post(
-                'http://127.0.0.1:8000/api/register/',
-                {
-                    full_name: formData.fullName,
-                    email: formData.email,
-                    password: formData.password,
-                    confirm_password: formData.confirmPassword
-                }
-            );
+            const response = await registerUser({
+                full_name: formData.fullName,
+                email: formData.email,
+                password: formData.password,
+                confirm_password: formData.confirmPassword
+            });
 
             setMessage(response.data.message);
             setMessageType('success');
@@ -194,7 +190,7 @@ function Register() {
 
                     {message && (
                         <p
-                            className="register-message"
+                            className={`register-message ${messageType === 'success' ? 'success' : ''}`}
                             role="alert"
                             aria-live="polite"
                         >

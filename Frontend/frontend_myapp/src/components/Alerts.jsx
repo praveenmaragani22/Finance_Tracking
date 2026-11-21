@@ -1,11 +1,31 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getAlertsData } from '../Api';
 
 function Alerts() {
 
     const [notifications, setNotifications] = useState([]);
-
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
     const [filter, setFilter] = useState('all');
+
+    useEffect(() => {
+        const fetchAlerts = async () => {
+            try {
+                setLoading(true);
+                setError('');
+                const response = await getAlertsData();
+                const data = Array.isArray(response.data) ? response.data : [];
+                setNotifications(data);
+            } catch (err) {
+                console.error('Error fetching alerts:', err);
+                setError('Unable to load alerts. Please try again.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAlerts();
+    }, []);
 
     const unreadCount = notifications.filter(
         notification => !notification.read
@@ -50,6 +70,39 @@ function Alerts() {
         }
     }
 
+    const getSeverityBadge = (severity) => {
+        if (severity === 'danger') {
+            return {
+                label: 'CRITICAL',
+                bg: '#fee2e2',
+                color: '#dc2626',
+                border: '#fecaca'
+            };
+        }
+        if (severity === 'warning') {
+            return {
+                label: 'WARNING',
+                bg: '#fef3c7',
+                color: '#d97706',
+                border: '#fde68a'
+            };
+        }
+        if (severity === 'success') {
+            return {
+                label: 'SUCCESS',
+                bg: '#d1fae5',
+                color: '#059669',
+                border: '#a7f3d0'
+            };
+        }
+        return {
+            label: 'INFO',
+            bg: '#e0f2fe',
+            color: '#0284c7',
+            border: '#bae6fd'
+        };
+    };
+
     return (
 
         <div className="alerts">
@@ -67,40 +120,65 @@ function Alerts() {
 
             </div>
 
+            {error && (
+                <div style={{
+                    padding: '12px 16px',
+                    marginBottom: '20px',
+                    borderRadius: '8px',
+                    backgroundColor: '#fee2e2',
+                    color: '#dc2626',
+                    border: '1px solid #fecaca',
+                    fontSize: '13px'
+                }}>
+                    {error}
+                </div>
+            )}
+
             <div className="alerts-toolbar">
 
                 <div className="alert-filters">
 
                     <button
+                        type="button"
                         className={filter === 'all' ? 'active' : ''}
                         onClick={() => setFilter('all')}
                     >
-                        All
+                        All ({notifications.length})
                     </button>
 
                     <button
+                        type="button"
                         className={filter === 'unread' ? 'active' : ''}
                         onClick={() => setFilter('unread')}
                     >
-                        Unread
+                        Unread ({unreadCount})
                     </button>
 
                     <button
+                        type="button"
                         className={filter === 'read' ? 'active' : ''}
                         onClick={() => setFilter('read')}
                     >
-                        Read
+                        Read ({notifications.length - unreadCount})
                     </button>
 
                 </div>
 
                 <div className="alert-actions">
 
-                    <button onClick={markAllAsRead}>
+                    <button
+                        type="button"
+                        onClick={markAllAsRead}
+                        disabled={unreadCount === 0}
+                    >
                         Mark all as read
                     </button>
 
-                    <button onClick={deleteAllNotifications}>
+                    <button
+                        type="button"
+                        onClick={deleteAllNotifications}
+                        disabled={notifications.length === 0}
+                    >
                         Clear all
                     </button>
 
@@ -108,16 +186,24 @@ function Alerts() {
 
             </div>
 
-            {filteredNotifications.length === 0 ? (
+            {loading ? (
+
+                <div style={{ padding: '40px', textAlign: 'center', color: '#8492a6' }}>
+                    Checking financial alerts...
+                </div>
+
+            ) : filteredNotifications.length === 0 ? (
 
                 <div className="alerts-empty-state">
 
                     <div className="empty-state-icon">♧</div>
 
-                    <h3>No Notifications Yet</h3>
+                    <h3>No Notifications Found</h3>
 
                     <p>
-                        Your financial alerts and notifications will appear here.
+                        {filter === 'unread'
+                            ? 'You have read all your notifications!'
+                            : 'Your financial alerts and notifications will appear here.'}
                     </p>
 
                 </div>
@@ -126,47 +212,82 @@ function Alerts() {
 
                 <div className="notification-list">
 
-                    {filteredNotifications.map(notification => (
+                    {filteredNotifications.map(notification => {
+                        const badge = getSeverityBadge(notification.severity);
 
-                        <div
-                            className={`notification-card ${notification.read ? 'read' : 'unread'}`}
-                            key={notification.id}
-                        >
+                        return (
 
-                            <div className={`notification-icon ${notification.type}`}>
-                                {notification.type === 'budget' && '₹'}
-                                {notification.type === 'goal' && '◎'}
-                                {notification.type === 'transaction' && '↔'}
-                                {notification.type === 'general' && 'i'}
-                            </div>
+                            <div
+                                className={`notification-card ${notification.read ? 'read' : 'unread'}`}
+                                key={notification.id}
+                                style={{
+                                    borderLeft: notification.severity === 'danger'
+                                        ? '4px solid #dc2626'
+                                        : notification.severity === 'warning'
+                                            ? '4px solid #f59e0b'
+                                            : notification.severity === 'success'
+                                                ? '4px solid #10b981'
+                                                : '4px solid #3b82f6'
+                                }}
+                            >
 
-                            <div className="notification-content">
+                                <div className={`notification-icon ${notification.type}`}>
+                                    {notification.type === 'budget' && '₹'}
+                                    {notification.type === 'goal' && '◎'}
+                                    {notification.type === 'transaction' && '↔'}
+                                    {notification.type === 'general' && 'i'}
+                                </div>
 
-                                <h3>{notification.title}</h3>
+                                <div className="notification-content">
 
-                                <p>{notification.message}</p>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                        <h3 style={{ margin: 0 }}>{notification.title}</h3>
+                                        {notification.severity && (
+                                            <span style={{
+                                                fontSize: '10px',
+                                                fontWeight: '700',
+                                                padding: '2px 7px',
+                                                borderRadius: '4px',
+                                                backgroundColor: badge.bg,
+                                                color: badge.color,
+                                                border: `1px solid ${badge.border}`,
+                                                letterSpacing: '0.5px'
+                                            }}>
+                                                {badge.label}
+                                            </span>
+                                        )}
+                                    </div>
 
-                                <span>{notification.date}</span>
+                                    <p>{notification.message}</p>
 
-                            </div>
+                                    <span>{notification.date}</span>
 
-                            <div className="notification-actions">
+                                </div>
 
-                                {!notification.read && (
-                                    <button onClick={() => markAsRead(notification.id)}>
-                                        Mark read
+                                <div className="notification-actions">
+
+                                    {!notification.read && (
+                                        <button
+                                            type="button"
+                                            onClick={() => markAsRead(notification.id)}
+                                        >
+                                            Mark read
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => deleteNotification(notification.id)}
+                                    >
+                                        Delete
                                     </button>
-                                )}
 
-                                <button onClick={() => deleteNotification(notification.id)}>
-                                    Delete
-                                </button>
+                                </div>
 
                             </div>
 
-                        </div>
-
-                    ))}
+                        );
+                    })}
 
                 </div>
 

@@ -1,6 +1,10 @@
-
 import { useState, useEffect } from 'react';
-import API from '../Api';
+import {
+    getTransactions,
+    createTransaction,
+    updateTransaction,
+    deleteTransaction
+} from '../Api';
 
 function Transactions({ searchQuery = '' }) {
 
@@ -58,7 +62,7 @@ function Transactions({ searchQuery = '' }) {
             try {
                 setLoading(true);
 
-                const response = await API.get('transactions/');
+                const response = await getTransactions();
 
                 const data = Array.isArray(response.data)
                     ? response.data
@@ -124,8 +128,8 @@ function Transactions({ searchQuery = '' }) {
 
             if (editingId !== null) {
 
-                const response = await API.put(
-                    `transactions/${editingId}/`,
+                const response = await updateTransaction(
+                    editingId,
                     transactionData
                 );
 
@@ -141,10 +145,7 @@ function Transactions({ searchQuery = '' }) {
 
             } else {
 
-                const response = await API.post(
-                    'transactions/',
-                    transactionData
-                );
+                const response = await createTransaction(transactionData);
 
                 const newTransaction = formatTransaction(response.data);
 
@@ -206,7 +207,7 @@ function Transactions({ searchQuery = '' }) {
         }
 
         try {
-            await API.delete(`transactions/${id}/`);
+            await deleteTransaction(id);
 
             setTransactions(previous =>
                 previous.filter(transaction => transaction.id !== id)

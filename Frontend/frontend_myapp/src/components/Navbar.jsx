@@ -1,9 +1,24 @@
-
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getProfile } from '../Api';
 
 function Navbar({ searchQuery, setSearchQuery }) {
 
     const navigate = useNavigate();
+    const [userName, setUserName] = useState('');
+
+    useEffect(() => {
+        getProfile()
+            .then(res => {
+                if (res.data && res.data.full_name) {
+                    setUserName(res.data.full_name);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    const initial = userName ? userName.trim().charAt(0).toUpperCase() : 'P';
+    const displayName = userName ? userName.trim().split(' ')[0] : 'Profile';
 
     return (
         <div className="navbar">
@@ -51,11 +66,11 @@ function Navbar({ searchQuery, setSearchQuery }) {
                     title="Open Settings"
                 >
                     <div className="profile-avatar">
-                        P
+                        {initial}
                     </div>
 
                     <div className="profile-details">
-                        <h4>Profile</h4>
+                        <h4>{displayName}</h4>
                         <p>Account</p>
                     </div>
                 </div>

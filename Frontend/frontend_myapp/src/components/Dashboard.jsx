@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import {
     ResponsiveContainer,
@@ -55,11 +54,11 @@ function Dashboard() {
     };
 
     if (loading) {
-        return <div className="dashboard">Loading dashboard...</div>;
+        return <div className="dashboard"><p style={{ padding: '30px', color: '#64748b' }}>Loading dashboard...</p></div>;
     }
 
     if (error) {
-        return <div className="dashboard">{error}</div>;
+        return <div className="dashboard"><p style={{ padding: '30px', color: '#dc2626' }}>{error}</p></div>;
     }
 
     if (!dashboardData) return null;
@@ -69,6 +68,9 @@ function Dashboard() {
 
     const categoryData =
         dashboardData.expenses_by_category || [];
+
+    const userBudgets =
+        dashboardData.budgets || [];
 
     // Prepare monthly chart data
     const monthlyData = {};
@@ -269,14 +271,56 @@ function Dashboard() {
                     </div>
                 </div>
 
-                <div className="budget-empty-state">
-                    <div className="empty-state-icon">▤</div>
-                    <h4>No budgets created yet</h4>
-                    <p>
-                        Create your first budget to monitor your
-                        monthly spending and manage your money better.
-                    </p>
-                </div>
+                {userBudgets.length > 0 ? (
+                    <div className="budget-cards" style={{ marginTop: '12px' }}>
+                        {userBudgets.map((budget) => {
+                            const spent = Number(budget.spent || 0);
+                            const amount = Number(budget.amount || 0);
+                            const percentage = amount > 0 ? Math.min((spent / amount) * 100, 100) : 0;
+                            const isExceeded = spent > amount;
+
+                            return (
+                                <div className="budget-card" key={budget.id}>
+                                    <div className="budget-card-header">
+                                        <div>
+                                            <h3>{budget.category}</h3>
+                                            <p>{budget.month || (budget.start_date ? budget.start_date.substring(0, 7) : '')}</p>
+                                        </div>
+                                    </div>
+
+                                    <h2>{formatCurrency(amount)}</h2>
+
+                                    <p className="budget-spent" style={{ color: isExceeded ? '#dc2626' : '#52627a' }}>
+                                        Spent: {formatCurrency(spent)} {isExceeded && '(Exceeded!)'}
+                                    </p>
+
+                                    <div className="budget-progress">
+                                        <div
+                                            className="budget-progress-fill"
+                                            style={{
+                                                width: `${percentage}%`,
+                                                backgroundColor: isExceeded ? '#dc2626' : percentage >= 80 ? '#f59e0b' : '#12c9a5'
+                                            }}
+                                        />
+                                    </div>
+
+                                    <p className="budget-remaining">
+                                        Remaining: {formatCurrency(amount - spent)}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="budget-empty-state">
+                        <div className="empty-state-icon">▤</div>
+                        <h4>No budgets created yet</h4>
+                        <p>
+                            Create your first budget to monitor your
+                            monthly spending and manage your money better.
+                        </p>
+                    </div>
+                )}
 
             </div>
 

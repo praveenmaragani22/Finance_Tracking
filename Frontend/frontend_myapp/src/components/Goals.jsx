@@ -1,9 +1,20 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import {
+    getGoals,
+    createGoal,
+    updateGoal,
+    deleteGoal,
+    addGoalSavings
+} from '../Api';
 
 function Goals() {
 
     const [goals, setGoals] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [message, setMessage] = useState('');
+    const [messageType, setMessageType] = useState('');
+
     const [showForm, setShowForm] = useState(false);
     const [editId, setEditId] = useState(null);
 
@@ -14,6 +25,43 @@ function Goals() {
         targetDate: ''
     });
 
+    const fetchGoals = async () => {
+        try {
+            setLoading(true);
+            const response = await getGoals();
+            const data = Array.isArray(response.data)
+                ? response.data
+                : response.data.results || [];
+
+            // Normalize fields for the UI
+            const normalized = data.map(g => ({
+                id: g.id,
+                goalName: g.title,
+                targetAmount: Number(g.target_amount || 0),
+                savedAmount: Number(g.current_amount || 0),
+                targetDate: g.target_date,
+                progressPercentage: Number(g.progress_percentage || 0),
+                remainingAmount: Number(g.remaining_amount || 0),
+                isCompleted: Boolean(g.is_completed)
+            }));
+
+            setGoals(normalized);
+        } catch (error) {
+            console.error('Error fetching goals:', error);
+            setMessage(
+                error.response?.data?.detail ||
+                'Unable to load savings goals. Please try again.'
+            );
+            setMessageType('error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchGoals();
+    }, []);
+
     function handleChange(e) {
         const { name, value } = e.target;
 
@@ -21,6 +69,7 @@ function Goals() {
             ...formData,
             [name]: value
         });
+        setMessage('');
     }
 
     function resetForm() {
@@ -35,84 +84,138 @@ function Goals() {
         setShowForm(false);
     }
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
 
         const target = Number(formData.targetAmount);
-        const saved = Number(formData.savedAmount);
+        const saved = Number(formData.savedAmount || 0);
 
-        if (target <= 0 || saved < 0 || saved > target) {
-            alert('Please enter valid goal amounts.');
+        if (!Number.isFinite(target) || target <= 0) {
+            setMessage('Please enter a valid target amount greater than zero.');
+            setMessageType('error');
             return;
         }
 
-        if (editId !== null) {
-
-            setGoals(goals.map((goal) =>
-                goal.id === editId
-                    ? {
-                        ...goal,
-                        ...formData,
-                        targetAmount: target,
-                        savedAmount: saved
-                    }
-                    : goal
-            ));
-
-        } else {
-
-            const newGoal = {
-                id: Date.now(),
-                ...formData,
-                targetAmount: target,
-                savedAmount: saved
-            };
-
-            setGoals([...goals, newGoal]);
+        if (saved < 0 || saved > target) {
+            setMessage('Saved amount cannot be negative or exceed the target amount.');
+            setMessageType('error');
+            return;
         }
 
-        resetForm();
+        if (!formData.targetDate) {
+            setMessage('Please specify a target date.');
+            setMessageType('error');
+            return;
+        }
+
+        const payload = {
+            title: formData.goalName.trim(),
+            target_amount: target,
+            current_amount: saved,
+            target_date: formData.targetDate
+        };
+
+        try {
+            setSubmitting(true);
+            setMessage('');
+
+            if (editId !== null) {
+                await updateGoal(editId, payload);
+                setMessage('Goal updated successfully!');
+            } else {
+                await createGoal(payload);
+                setMessage('Goal created successfully!');
+            }
+
+            setMessageType('success');
+            resetForm();
+            fetchGoals();
+
+        } catch (error) {
+            console.error('Error saving goal:', error);
+            const errorData = error.response?.data;
+            if (errorData && typeof errorData === 'object') {
+                const firstError = Object.values(errorData)[0];
+                setMessage(
+                    Array.isArray(firstError)
+                        ? firstError[0]
+                        : String(firstError || 'Unable to save goal.')
+                );
+            } else {
+                setMessage('Unable to save goal. Please try again.');
+            }
+            setMessageType('error');
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     function handleEdit(goal) {
         setFormData({
             goalName: goal.goalName,
-            targetAmount: goal.targetAmount,
-            savedAmount: goal.savedAmount,
+            targetAmount: String(goal.targetAmount),
+            savedAmount: String(goal.savedAmount),
             targetDate: goal.targetDate
         });
 
         setEditId(goal.id);
+        setMessage('');
         setShowForm(true);
     }
 
-    function handleDelete(id) {
-        if (window.confirm('Are you sure you want to delete this goal?')) {
-            setGoals(goals.filter((goal) => goal.id !== id));
-        }
-    }
-
-    function handleAddSavings(goal) {
-        const amount = Number(
-            window.prompt('Enter the amount you want to add:')
-        );
-
-        if (!Number.isFinite(amount) || amount <= 0) {
+    async function handleDelete(id) {
+        if (!window.confirm('Are you sure you want to delete this goal?')) {
             return;
         }
 
+        try {
+            await deleteGoal(id);
+            setGoals(prev => prev.filter(g => g.id !== id));
+            setMessage('Goal deleted successfully.');
+            setMessageType('success');
+        } catch (error) {
+            console.error('Error deleting goal:', error);
+            setMessage(
+                error.response?.data?.detail ||
+                'Unable to delete goal. Please try again.'
+            );
+            setMessageType('error');
+        }
+    }
+
+    async function handleAddSavings(goal) {
         const remaining = goal.targetAmount - goal.savedAmount;
+
+        const input = window.prompt(
+            `Enter amount to add to "${goal.goalName}" (Remaining: ₹${remaining.toLocaleString('en-IN')}):`
+        );
+
+        if (input === null) return; // User cancelled
+
+        const amount = Number(input);
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            alert('Please enter a valid amount greater than zero.');
+            return;
+        }
 
         if (amount > remaining) {
             alert(`You can add up to ₹${remaining.toLocaleString('en-IN')}.`);
             return;
         }
 
-        setGoals(goals.map((item) =>
-            item.id === goal.id
-                ? { ...item, savedAmount: item.savedAmount + amount }
-                : item
-        ));
+        try {
+            await addGoalSavings(goal.id, amount);
+            setMessage(`Added ₹${amount.toLocaleString('en-IN')} to "${goal.goalName}"!`);
+            setMessageType('success');
+            fetchGoals();
+        } catch (error) {
+            console.error('Error adding savings:', error);
+            alert(
+                error.response?.data?.detail ||
+                'Unable to add savings. Please try again.'
+            );
+        }
     }
 
     return (
@@ -126,19 +229,56 @@ function Goals() {
                 </div>
 
                 <button
+                    type="button"
                     className="add-goal-btn"
-                    onClick={() => setShowForm(!showForm)}
+                    onClick={() => {
+                        if (showForm) {
+                            resetForm();
+                        } else {
+                            setShowForm(true);
+                            setMessage('');
+                        }
+                    }}
                 >
-                    + Create Goal
+                    {showForm ? 'Close Form' : '+ Create Goal'}
                 </button>
 
             </div>
+
+            {/* Notification message */}
+            {message && !showForm && (
+                <div style={{
+                    padding: '12px 16px',
+                    marginBottom: '20px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    backgroundColor: messageType === 'error' ? '#fee2e2' : '#e5faf5',
+                    color: messageType === 'error' ? '#dc2626' : '#087f6e',
+                    border: `1px solid ${messageType === 'error' ? '#fecaca' : '#b7eee2'}`
+                }}>
+                    {message}
+                </div>
+            )}
 
             {showForm && (
 
                 <div className="goal-form-container">
 
                     <h2>{editId !== null ? 'Edit Goal' : 'Create New Goal'}</h2>
+
+                    {message && (
+                        <div style={{
+                            padding: '10px 14px',
+                            marginBottom: '15px',
+                            borderRadius: '7px',
+                            fontSize: '13px',
+                            backgroundColor: messageType === 'error' ? '#fee2e2' : '#e5faf5',
+                            color: messageType === 'error' ? '#dc2626' : '#087f6e',
+                            border: `1px solid ${messageType === 'error' ? '#fecaca' : '#b7eee2'}`
+                        }}>
+                            {message}
+                        </div>
+                    )}
 
                     <form className="goal-form" onSubmit={handleSubmit}>
 
@@ -195,16 +335,25 @@ function Goals() {
 
                         <div className="goal-form-actions">
 
-                            <button type="submit" className="save-goal-btn">
-                                {editId !== null ? 'Update Goal' : 'Save Goal'}
-                            </button>
-
                             <button
                                 type="button"
                                 className="cancel-goal-btn"
                                 onClick={resetForm}
+                                disabled={submitting}
                             >
                                 Cancel
+                            </button>
+
+                            <button
+                                type="submit"
+                                className="save-goal-btn"
+                                disabled={submitting}
+                            >
+                                {submitting
+                                    ? 'Saving...'
+                                    : editId !== null
+                                        ? 'Update Goal'
+                                        : 'Save Goal'}
                             </button>
 
                         </div>
@@ -214,7 +363,13 @@ function Goals() {
                 </div>
             )}
 
-            {goals.length === 0 ? (
+            {loading ? (
+
+                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+                    Loading goals...
+                </div>
+
+            ) : goals.length === 0 ? (
 
                 <div className="goal-empty-state">
                     <div className="empty-state-icon">◎</div>
@@ -231,12 +386,11 @@ function Goals() {
 
                     {goals.map((goal) => {
 
-                        const percentage = Math.min(
-                            (goal.savedAmount / goal.targetAmount) * 100,
-                            100
-                        );
+                        const percentage = goal.targetAmount > 0
+                            ? Math.min((goal.savedAmount / goal.targetAmount) * 100, 100)
+                            : 0;
 
-                        const remaining = goal.targetAmount - goal.savedAmount;
+                        const remaining = Math.max(0, goal.targetAmount - goal.savedAmount);
 
                         return (
 
@@ -250,11 +404,17 @@ function Goals() {
                                     </div>
 
                                     <div className="goal-actions">
-                                        <button onClick={() => handleEdit(goal)}>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleEdit(goal)}
+                                        >
                                             Edit
                                         </button>
 
-                                        <button onClick={() => handleDelete(goal.id)}>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDelete(goal.id)}
+                                        >
                                             Delete
                                         </button>
                                     </div>
@@ -265,12 +425,12 @@ function Goals() {
 
                                     <div>
                                         <span>Saved Amount</span>
-                                        <h2>₹{goal.savedAmount.toLocaleString('en-IN')}</h2>
+                                        <h2>₹{goal.savedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
                                     </div>
 
                                     <div>
                                         <span>Target Amount</span>
-                                        <h2>₹{goal.targetAmount.toLocaleString('en-IN')}</h2>
+                                        <h2>₹{goal.targetAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
                                     </div>
 
                                 </div>
@@ -278,17 +438,21 @@ function Goals() {
                                 <div className="goal-progress">
                                     <div
                                         className="goal-progress-fill"
-                                        style={{ width: `${percentage}%` }}
+                                        style={{
+                                            width: `${percentage}%`,
+                                            backgroundColor: percentage >= 100 ? '#10b981' : '#12c9a5'
+                                        }}
                                     />
                                 </div>
 
                                 <div className="goal-progress-details">
                                     <span>{percentage.toFixed(1)}% completed</span>
-                                    <span>₹{remaining.toLocaleString('en-IN')} remaining</span>
+                                    <span>₹{remaining.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remaining</span>
                                 </div>
 
                                 {remaining > 0 ? (
                                     <button
+                                        type="button"
                                         className="add-savings-btn"
                                         onClick={() => handleAddSavings(goal)}
                                     >
@@ -296,7 +460,7 @@ function Goals() {
                                     </button>
                                 ) : (
                                     <p className="goal-completed">
-                                        Goal completed!
+                                        ✓ Goal completed!
                                     </p>
                                 )}
 

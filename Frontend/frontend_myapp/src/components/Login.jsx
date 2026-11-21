@@ -1,7 +1,6 @@
-
 import { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { loginUser } from '../Api';
 
 function Login() {
 
@@ -34,13 +33,10 @@ function Login() {
 
         try {
 
-            const response = await axios.post(
-                'http://127.0.0.1:8000/api/login/',
-                {
-                    email: formData.email,
-                    password: formData.password
-                }
-            );
+            const response = await loginUser({
+                email: formData.email,
+                password: formData.password
+            });
 
             // Store JWT tokens for the current browser session
             sessionStorage.setItem('access_token', response.data.access);

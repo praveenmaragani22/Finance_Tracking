@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getProfile, updateProfile, changePassword } from '../Api';
 
 function Settings() {
 
@@ -10,16 +11,22 @@ function Settings() {
         email: ''
     });
 
-    const [preferences, setPreferences] = useState({
-        currency: 'INR',
-        dateFormat: 'DD/MM/YYYY'
+    const [preferences, setPreferences] = useState(() => {
+        const saved = localStorage.getItem('finance_preferences');
+        return saved ? JSON.parse(saved) : {
+            currency: 'INR',
+            dateFormat: 'DD/MM/YYYY'
+        };
     });
 
-    const [notifications, setNotifications] = useState({
-        emailAlerts: true,
-        budgetAlerts: true,
-        goalAlerts: true,
-        transactionAlerts: false
+    const [notifications, setNotifications] = useState(() => {
+        const saved = localStorage.getItem('finance_notifications');
+        return saved ? JSON.parse(saved) : {
+            emailAlerts: true,
+            budgetAlerts: true,
+            goalAlerts: true,
+            transactionAlerts: false
+        };
     });
 
     const [passwordData, setPasswordData] = useState({
@@ -29,6 +36,29 @@ function Settings() {
     });
 
     const [message, setMessage] = useState('');
+    const [messageType, setMessageType] = useState('success');
+    const [loadingProfile, setLoadingProfile] = useState(true);
+    const [submittingProfile, setSubmittingProfile] = useState(false);
+    const [submittingPassword, setSubmittingPassword] = useState(false);
+
+    useEffect(() => {
+        const fetchUserProfile = async () => {
+            try {
+                setLoadingProfile(true);
+                const response = await getProfile();
+                setProfile({
+                    fullName: response.data.full_name || '',
+                    email: response.data.email || ''
+                });
+            } catch (error) {
+                console.error('Error fetching user profile:', error);
+            } finally {
+                setLoadingProfile(false);
+            }
+        };
+
+        fetchUserProfile();
+    }, []);
 
     function handleProfileChange(e) {
         const { name, value } = e.target;
@@ -66,38 +96,104 @@ function Settings() {
         });
     }
 
-    function handleProfileSubmit(e) {
+    async function handleProfileSubmit(e) {
         e.preventDefault();
 
-        setMessage('Profile changes are ready. Backend connection is required to save them.');
+        if (!profile.fullName.trim()) {
+            setMessage('Full name cannot be empty.');
+            setMessageType('error');
+            return;
+        }
+
+        try {
+            setSubmittingProfile(true);
+            setMessage('');
+
+            const response = await updateProfile({
+                full_name: profile.fullName.trim()
+            });
+
+            setMessage(response.data.message || 'Profile updated successfully!');
+            setMessageType('success');
+
+            if (response.data.user) {
+                setProfile({
+                    fullName: response.data.user.full_name,
+                    email: response.data.user.email
+                });
+            }
+
+        } catch (error) {
+            console.error('Error updating profile:', error);
+            setMessage(
+                error.response?.data?.detail ||
+                'Unable to update profile. Please try again.'
+            );
+            setMessageType('error');
+        } finally {
+            setSubmittingProfile(false);
+        }
     }
 
     function handlePreferencesSubmit(e) {
         e.preventDefault();
 
-        setMessage('Preferences updated locally. Backend connection is required for permanent saving.');
+        localStorage.setItem('finance_preferences', JSON.stringify(preferences));
+        localStorage.setItem('finance_notifications', JSON.stringify(notifications));
+
+        setMessage('Account and notification preferences saved successfully!');
+        setMessageType('success');
     }
 
-    function handlePasswordSubmit(e) {
+    async function handlePasswordSubmit(e) {
         e.preventDefault();
 
         if (passwordData.newPassword !== passwordData.confirmPassword) {
             setMessage('New password and confirm password do not match.');
+            setMessageType('error');
             return;
         }
 
         if (passwordData.newPassword.length < 8) {
             setMessage('New password must contain at least 8 characters.');
+            setMessageType('error');
             return;
         }
 
-        setMessage('Password form validated. Backend connection is required to change your password.');
+        try {
+            setSubmittingPassword(true);
+            setMessage('');
 
-        setPasswordData({
-            currentPassword: '',
-            newPassword: '',
-            confirmPassword: ''
-        });
+            const response = await changePassword({
+                current_password: passwordData.currentPassword,
+                new_password: passwordData.newPassword,
+                confirm_password: passwordData.confirmPassword
+            });
+
+            setMessage(response.data.message || 'Password updated successfully!');
+            setMessageType('success');
+
+            setPasswordData({
+                currentPassword: '',
+                newPassword: '',
+                confirmPassword: ''
+            });
+
+        } catch (error) {
+            console.error('Error changing password:', error);
+            const errData = error.response?.data;
+            if (errData && typeof errData === 'object') {
+                const firstErr = Object.values(errData)[0];
+                setMessage(
+                    Array.isArray(firstErr) ? firstErr[0] : String(firstErr)
+                );
+            } else {
+                setMessage('Unable to change password. Please verify your current password.');
+            }
+            setMessageType('error');
+        } finally {
+            setSubmittingPassword(false);
+        }
     }
 
     function handleLogout() {
@@ -107,7 +203,6 @@ function Settings() {
             sessionStorage.removeItem('access_token');
             sessionStorage.removeItem('refresh_token');
             sessionStorage.clear();
-            localStorage.clear();
             navigate('/login');
         }
     }
@@ -134,9 +229,22 @@ function Settings() {
             </div>
 
             {message && (
-                <div className="settings-message">
-                    {message}
-                    <button onClick={() => setMessage('')}>×</button>
+                <div
+                    className="settings-message"
+                    style={{
+                        backgroundColor: messageType === 'error' ? '#fee2e2' : '#e5faf5',
+                        borderColor: messageType === 'error' ? '#fecaca' : '#b7eee2',
+                        color: messageType === 'error' ? '#dc2626' : '#087f6e'
+                    }}
+                >
+                    <span>{message}</span>
+                    <button
+                        type="button"
+                        onClick={() => setMessage('')}
+                        style={{ color: messageType === 'error' ? '#dc2626' : '#087f6e' }}
+                    >
+                        ×
+                    </button>
                 </div>
             )}
 
@@ -161,7 +269,7 @@ function Settings() {
                                 name="fullName"
                                 value={profile.fullName}
                                 onChange={handleProfileChange}
-                                placeholder="Enter your full name"
+                                placeholder={loadingProfile ? 'Loading...' : 'Enter your full name'}
                                 required
                             />
                         </div>
@@ -173,16 +281,21 @@ function Settings() {
                                 type="email"
                                 name="email"
                                 value={profile.email}
-                                onChange={handleProfileChange}
-                                placeholder="Enter your email"
-                                required
+                                placeholder={loadingProfile ? 'Loading...' : 'Enter your email'}
+                                disabled
+                                style={{ backgroundColor: '#f8fafc', cursor: 'not-allowed' }}
+                                title="Email address cannot be changed"
                             />
                         </div>
 
                     </div>
 
-                    <button type="submit" className="settings-save-btn">
-                        Save Profile
+                    <button
+                        type="submit"
+                        className="settings-save-btn"
+                        disabled={submittingProfile}
+                    >
+                        {submittingProfile ? 'Saving...' : 'Save Profile'}
                     </button>
 
                 </form>
@@ -333,6 +446,7 @@ function Settings() {
                                 name="currentPassword"
                                 value={passwordData.currentPassword}
                                 onChange={handlePasswordChange}
+                                placeholder="Enter current password"
                                 required
                             />
                         </div>
@@ -346,6 +460,7 @@ function Settings() {
                                 value={passwordData.newPassword}
                                 onChange={handlePasswordChange}
                                 minLength="8"
+                                placeholder="Min. 8 characters"
                                 required
                             />
                         </div>
@@ -358,14 +473,19 @@ function Settings() {
                                 name="confirmPassword"
                                 value={passwordData.confirmPassword}
                                 onChange={handlePasswordChange}
+                                placeholder="Confirm new password"
                                 required
                             />
                         </div>
 
                     </div>
 
-                    <button type="submit" className="settings-save-btn">
-                        Update Password
+                    <button
+                        type="submit"
+                        className="settings-save-btn"
+                        disabled={submittingPassword}
+                    >
+                        {submittingPassword ? 'Updating Password...' : 'Update Password'}
                     </button>
 
                 </form>
@@ -391,6 +511,16 @@ function Settings() {
                     <div>
                         <span>Application</span>
                         <strong>Personal Finance Tracking System</strong>
+                    </div>
+
+                    <div>
+                        <span>Account Status</span>
+                        <strong style={{ color: '#12a98d' }}>Active & Secure</strong>
+                    </div>
+
+                    <div>
+                        <span>Signed In As</span>
+                        <strong>{profile.email || 'Authenticated User'}</strong>
                     </div>
 
                 </div>
